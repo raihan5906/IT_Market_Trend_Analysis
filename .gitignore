@@ -1,0 +1,44 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.conda/
+
+# Node.js / Vite / React
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/.vite/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment & local secrets
+.env
+.env.local
+.env.*.local
+
+# Raw datasets, data folders & large archive dumps (keep lightweight web_app_data artifacts)
+data/
+*.csv
+*.xlsx
+*.xls
+*.parquet
+*.zip
+*.tar.gz
+processed_colab/
+
+# OS & editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/web_app_data/*.joblib

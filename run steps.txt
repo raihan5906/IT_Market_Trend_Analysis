@@ -1,0 +1,16 @@
+cd "D:\VS CODE\POME"
+pip install -r backend\requirements.txt
+uvicorn backend.main:app --reload --port 8000
+
+
+
+cd "D:\VS CODE\POME\frontend"
+npm install
+npm run dev
+
+
+backend
+http://127.0.0.1:8000/
+
+frontend
+http://localhost:5173
