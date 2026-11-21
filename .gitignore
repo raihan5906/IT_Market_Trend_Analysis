@@ -42,3 +42,4 @@ processed_colab/
 Thumbs.db
 .vscode/
 .idea/web_app_data/*.joblib
+.env

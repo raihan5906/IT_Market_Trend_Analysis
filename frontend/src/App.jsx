@@ -5,12 +5,66 @@ import {
 } from 'recharts';
 import {
   BarChart3, Network, BrainCircuit, TrendingUp, LineChart as ForecastIcon,
-  Building2, Search, ArrowUpRight, ArrowDownRight, Minus, CheckCircle2
+  Building2, Search, ArrowUpRight, ArrowDownRight, Minus, CheckCircle2, X, Plus,
+  Globe, RefreshCw
 } from 'lucide-react';
 
 const API = 'http://localhost:8000/api';
 
-function SearchableSelect({ label, options, value, onChange, placeholder = "Type to search..." }) {
+const DEFAULT_SKILL_OPTIONS = [
+  'Python', 'SQL', 'Machine Learning', 'Scikit-Learn', 'Deep Learning',
+  'Pandas', 'NumPy', 'TensorFlow', 'PyTorch', 'Apache Spark',
+  'AWS', 'Microsoft Azure', 'Google Cloud Platform', 'Docker', 'Kubernetes',
+  'CI/CD', 'Git', 'Linux/Bash', 'React', 'Node.js', 'REST API',
+  'Power BI', 'Tableau', 'Excel', 'Selenium', 'Postman', 'Network Security'
+];
+
+const ROLE_LEAKAGE_TERMS = [
+  'software developer', 'software engineer', 'data scientist', 'data analyst',
+  'business analyst', 'machine learning engineer', 'ml engineer', 'data engineer',
+  'cloud & devops engineer', 'devops engineer', 'qa & test engineer',
+  'test engineer', 'cybersecurity analyst'
+];
+
+function stripRoleLeakage(text) {
+  let cleaned = String(text || '');
+  ROLE_LEAKAGE_TERMS.forEach((term) => {
+    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    cleaned = cleaned.replace(new RegExp(`\\b${escaped}\\b`, 'gi'), '');
+  });
+  return cleaned.replace(/\s{2,}/g, ' ').trim();
+}
+
+function getCompanyYearlyRows(comp) {
+  if (Array.isArray(comp?.yearly) && comp.yearly.length > 0) {
+    return comp.yearly;
+  }
+  const years = [2020, 2021, 2022, 2023, 2024, 2025, 2026];
+  const periodStr = String(comp?.hiring_period || '');
+  const match = periodStr.match(/(\d{4}).*?(\d{4})/);
+  const startYr = match ? Number(match[1]) : 2022;
+  const endYr = match ? Number(match[2]) : startYr;
+  const active = years.filter(y => y >= startYr && y <= endYr);
+  const buckets = active.length > 0 ? active : [2022];
+  const total = Number(comp?.posting_count || 0);
+  const base = Math.floor(total / buckets.length);
+  const rem = total % buckets.length;
+
+  let prev = null;
+  return years.map((yr) => {
+    const idx = buckets.indexOf(yr);
+    const postings = idx >= 0 ? base + (idx < rem ? 1 : 0) : 0;
+    const yoy_pct = prev == null
+      ? null
+      : prev > 0
+        ? Number((((postings - prev) / prev) * 100).toFixed(2))
+        : postings > 0 ? 100.0 : null;
+    prev = postings;
+    return { year: yr, postings, yoy_pct };
+  });
+}
+
+function SearchableSelect({ label, options, value, onChange, placeholder = 'Type to search...' }) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
 
@@ -44,13 +98,100 @@ function SearchableSelect({ label, options, value, onChange, placeholder = "Type
               <li
                 key={opt}
                 onMouseDown={() => { onChange(opt); setOpen(false); setQuery(''); }}
-                className={`px-4 py-2 cursor-pointer hover:bg-indigo-50 ${opt === value ? 'bg-indigo-100 font-semibold text-indigo-700' : 'text-slate-700'}`}
+                className={`px-4 py-2 cursor-pointer hover:bg-indigo-50 ${
+                  opt === value ? 'bg-indigo-100 font-semibold text-indigo-700' : 'text-slate-700'
+                }`}
               >
                 {opt}
               </li>
             ))
           )}
         </ul>
+      )}
+    </div>
+  );
+}
+
+function MultiOptionSearch({ label, options, selectedOptions, onToggleOption, onClearAll, placeholder = 'Search multiple options...' }) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+
+  const safeOptions = Array.isArray(options) ? options : [];
+  const filtered = useMemo(
+    () => safeOptions.filter(opt => opt.toLowerCase().includes(query.toLowerCase())),
+    [safeOptions, query]
+  );
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">{label}</label>
+        {selectedOptions.length > 0 && (
+          <button
+            type="button"
+            onClick={onClearAll}
+            className="text-xs font-semibold text-indigo-600 hover:underline"
+          >
+            Clear ({selectedOptions.length})
+          </button>
+        )}
+      </div>
+
+      <div className="relative max-w-md">
+        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+        <input
+          type="text"
+          value={query}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setTimeout(() => setOpen(false), 180)}
+          onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+          placeholder={placeholder}
+          className="w-full pl-9 pr-4 py-2 bg-white border border-slate-300 rounded-lg text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        />
+        {open && (
+          <ul className="absolute z-30 mt-1 w-full max-h-56 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-lg text-sm">
+            {filtered.length === 0 ? (
+              <li className="px-4 py-2 text-slate-400">No matching options</li>
+            ) : (
+              filtered.map(opt => {
+                const active = selectedOptions.includes(opt);
+                return (
+                  <li
+                    key={opt}
+                    onMouseDown={() => onToggleOption(opt)}
+                    className={`px-4 py-2 cursor-pointer flex items-center justify-between hover:bg-indigo-50 ${
+                      active ? 'bg-indigo-50 font-semibold text-indigo-700' : 'text-slate-700'
+                    }`}
+                  >
+                    <span>{opt}</span>
+                    <span className="text-xs font-bold">{active ? 'Selected' : '+ Add'}</span>
+                  </li>
+                );
+              })
+            )}
+          </ul>
+        )}
+      </div>
+
+      {selectedOptions.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 pt-1">
+          {selectedOptions.map(opt => (
+            <span
+              key={opt}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-800"
+            >
+              {opt}
+              <button
+                type="button"
+                onClick={() => onToggleOption(opt)}
+                className="hover:text-indigo-950"
+                aria-label={`Remove ${opt}`}
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -70,9 +211,11 @@ export default function App() {
   const [addon, setAddon] = useState(null);
 
   // Page 1 States
+  const [skillViewMode, setSkillViewMode] = useState('single');
   const [selectedSkill1, setSelectedSkill1] = useState('Python');
   const [granularity, setGranularity] = useState('yearly');
   const [top10Year, setTop10Year] = useState('All Years');
+  const [allSkillsFilter, setAllSkillsFilter] = useState('');
 
   // Page 2 States
   const [selectedRole2, setSelectedRole2] = useState('All Roles');
@@ -81,8 +224,10 @@ export default function App() {
   // Page 3 States
   const [clsMode, setClsMode] = useState('desc_to_role');
   const [jdInput, setJdInput] = useState(
-    'Looking for a Data Scientist proficient in Python, SQL, Machine Learning, Scikit-Learn, and statistical modeling to build predictive pipelines.'
+    'Proficient in Python, SQL, Machine Learning, Scikit-Learn, and statistical modeling to build predictive pipelines.'
   );
+  const [selectedSearchSkills, setSelectedSearchSkills] = useState(['Python', 'SQL']);
+  const [leakageWarning, setLeakageWarning] = useState(false);
   const [selectedClassifier, setSelectedClassifier] = useState('Logistic Regression');
   const [predictionRes, setPredictionRes] = useState(null);
   const [selectedRole3, setSelectedRole3] = useState('Data Scientist');
@@ -91,6 +236,8 @@ export default function App() {
   const [trendMode, setTrendMode] = useState('skill');
   const [selectedTrendSkill, setSelectedTrendSkill] = useState('Python');
   const [selectedTrendRole, setSelectedTrendRole] = useState('Data Scientist');
+  const [verifiedTrend, setVerifiedTrend] = useState(null);
+  const [verifyingTrend, setVerifyingTrend] = useState(false);
 
   // Page 5 States
   const [selectedForecastTarget, setSelectedForecastTarget] = useState('Overall IT Posting Volume (Consistent Portal)');
@@ -98,6 +245,7 @@ export default function App() {
   // Page 6 States
   const [selectedCompanyRole, setSelectedCompanyRole] = useState('Data Scientist');
   const [companySearch, setCompanySearch] = useState('');
+  const [selectedCompany, setSelectedCompany] = useState(null);
 
   useEffect(() => {
     Promise.all([
@@ -123,11 +271,175 @@ export default function App() {
       });
   }, []);
 
+  const activeTrendTarget = trendMode === 'skill' ? selectedTrendSkill : selectedTrendRole;
+
+  useEffect(() => {
+    if (loading || error || activePage !== 'trends' || !m4 || !activeTrendTarget) return;
+
+    let cancelled = false;
+    setVerifyingTrend(true);
+    setVerifiedTrend(null);
+
+    const params = new URLSearchParams({
+      kind: trendMode,
+      name: activeTrendTarget,
+    });
+
+    fetch(`${API}/trends/verify?${params.toString()}`)
+      .then(r => r.json())
+      .then(data => {
+        if (!cancelled) {
+          setVerifiedTrend(data);
+          setVerifyingTrend(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setVerifiedTrend(null);
+          setVerifyingTrend(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, error, activePage, m4, trendMode, activeTrendTarget]);
+
+  useEffect(() => {
+    if (!selectedCompany) return;
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') setSelectedCompany(null);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedCompany]);
+
+  const skillPool = useMemo(() => {
+    if (Array.isArray(m1?.skills) && m1.skills.length > 0) return m1.skills;
+    return DEFAULT_SKILL_OPTIONS;
+  }, [m1]);
+
+  const overallSkillSummary = useMemo(() => {
+    if (!m1?.series || typeof m1.series !== 'object') {
+      return {
+        periodSeries: [],
+        skillRows: [],
+        totalMentions: 0,
+        trackedSkillsCount: 0,
+        topSkillOverall: null,
+      };
+    }
+
+    const skillNames = Object.keys(m1.series);
+    const periodMap = new Map();
+    const perSkillStats = [];
+
+    skillNames.forEach((sk) => {
+      const pts = Array.isArray(m1.series[sk]?.[granularity]) ? m1.series[sk][granularity] : [];
+      let totalCount = 0;
+      let peakCount = -1;
+      let peakPeriod = '—';
+      let latestShare = 0;
+
+      pts.forEach((p, idx) => {
+        const cnt = Number(p.count || 0);
+        const pct = Number(p.demand_pct || 0);
+        const periodKey = String(p.period);
+
+        totalCount += cnt;
+        if (cnt > peakCount) {
+          peakCount = cnt;
+          peakPeriod = periodKey;
+        }
+        if (idx === pts.length - 1) {
+          latestShare = pct;
+        }
+
+        const existing = periodMap.get(periodKey) || {
+          period: periodKey,
+          total_mentions: 0,
+          pct_sum: 0,
+          skill_entries: 0,
+          top_skill: '',
+          top_skill_count: -1,
+        };
+        existing.total_mentions += cnt;
+        existing.pct_sum += pct;
+        existing.skill_entries += 1;
+        if (cnt > existing.top_skill_count) {
+          existing.top_skill_count = cnt;
+          existing.top_skill = sk;
+        }
+        periodMap.set(periodKey, existing);
+      });
+
+      perSkillStats.push({
+        skill: sk,
+        total_mentions: totalCount,
+        latest_demand_pct: Number(latestShare.toFixed(2)),
+        peak_period: peakPeriod,
+        peak_count: Math.max(peakCount, 0),
+      });
+    });
+
+    perSkillStats.sort((a, b) => b.total_mentions - a.total_mentions);
+
+    const periodSeries = Array.from(periodMap.values()).map((p) => ({
+      period: p.period,
+      total_mentions: p.total_mentions,
+      avg_demand_pct: p.skill_entries > 0 ? Number((p.pct_sum / p.skill_entries).toFixed(2)) : 0,
+      top_skill: p.top_skill || '—',
+      top_skill_count: Math.max(p.top_skill_count, 0),
+    }));
+
+    const totalMentions = perSkillStats.reduce((acc, s) => acc + s.total_mentions, 0);
+
+    return {
+      periodSeries,
+      skillRows: perSkillStats,
+      totalMentions,
+      trackedSkillsCount: perSkillStats.length,
+      topSkillOverall: perSkillStats[0] || null,
+    };
+  }, [m1, granularity]);
+
+  const handleToggleSearchSkill = (skill) => {
+    setSelectedSearchSkills(prev => {
+      const exists = prev.includes(skill);
+      return exists ? prev.filter(s => s !== skill) : [...prev, skill];
+    });
+  };
+
+  const handleAppendSelectedSkillsToInput = () => {
+    if (selectedSearchSkills.length === 0) return;
+    const base = stripRoleLeakage(jdInput);
+    const missing = selectedSearchSkills.filter(sk => !base.toLowerCase().includes(sk.toLowerCase()));
+    const combined = missing.length > 0 ? `${base} ${missing.join(', ')}`.trim() : base;
+    setJdInput(combined);
+    setLeakageWarning(false);
+  };
+
+  const handleJdChange = (val) => {
+    const hasRoleTerm = ROLE_LEAKAGE_TERMS.some(term =>
+      new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(val)
+    );
+    setLeakageWarning(hasRoleTerm);
+    setJdInput(val);
+  };
+
   const handlePredict = async () => {
+    const sanitizedText = stripRoleLeakage(jdInput);
+    const skillsPart = selectedSearchSkills.join(', ');
+    const payloadText = [sanitizedText, skillsPart].filter(Boolean).join('. ');
+
     const res = await fetch(`${API}/classification/predict`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: jdInput, model_name: selectedClassifier }),
+      body: JSON.stringify({
+        text: payloadText,
+        skills: selectedSearchSkills,
+        model_name: selectedClassifier,
+      }),
     });
     setPredictionRes(await res.json());
   };
@@ -140,6 +452,11 @@ export default function App() {
     { id: 'forecast', label: '5. 2026 Forecasting', icon: ForecastIcon },
     { id: 'companies', label: '6. Hiring Companies', icon: Building2 },
   ];
+
+  const selectedCompanyYearly = useMemo(
+    () => (selectedCompany ? getCompanyYearlyRows(selectedCompany) : []),
+    [selectedCompany]
+  );
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col">
@@ -173,14 +490,38 @@ export default function App() {
         {/* PAGE 1: STATISTICAL SKILL DEMAND */}
         {!loading && !error && activePage === 'demand' && m1 && (
           <div className="space-y-6">
-            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
+            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-5">
               <div className="flex flex-wrap items-end justify-between gap-4">
-                <SearchableSelect
-                  label="Select Skill (Searchable)"
-                  options={m1.skills}
-                  value={selectedSkill1}
-                  onChange={setSelectedSkill1}
-                />
+                <div className="flex flex-wrap items-end gap-4">
+                  <div className="flex bg-slate-100 p-1 rounded-lg">
+                    <button
+                      onClick={() => setSkillViewMode('single')}
+                      className={`px-4 py-1.5 rounded-md text-xs font-bold ${
+                        skillViewMode === 'single' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600'
+                      }`}
+                    >
+                      Single Skill
+                    </button>
+                    <button
+                      onClick={() => setSkillViewMode('all')}
+                      className={`px-4 py-1.5 rounded-md text-xs font-bold ${
+                        skillViewMode === 'all' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600'
+                      }`}
+                    >
+                      All Skills (Overall)
+                    </button>
+                  </div>
+
+                  {skillViewMode === 'single' && (
+                    <SearchableSelect
+                      label="Select Skill (Searchable)"
+                      options={m1.skills}
+                      value={selectedSkill1}
+                      onChange={setSelectedSkill1}
+                    />
+                  )}
+                </div>
+
                 <div className="flex bg-slate-100 p-1 rounded-lg">
                   {['yearly', 'monthly'].map(g => (
                     <button
@@ -196,21 +537,112 @@ export default function App() {
                 </div>
               </div>
 
-              <h2 className="text-lg font-bold text-slate-800 pt-2">
-                Historical Demand for <span className="text-indigo-600">{selectedSkill1}</span> ({granularity === 'yearly' ? 'Year-Wise' : 'Month-Wise'})
-              </h2>
-              <div className="h-80 w-full">
-                <ResponsiveContainer>
-                  <BarChart data={m1.series?.[selectedSkill1]?.[granularity] || []}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                    <XAxis dataKey="period" tick={{ fontSize: 11 }} />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    <Bar dataKey="count" name="Posting Count F(s)" fill="#4f46e5" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+              {skillViewMode === 'single' ? (
+                <>
+                  <h2 className="text-lg font-bold text-slate-800 pt-2">
+                    Historical Demand for <span className="text-indigo-600">{selectedSkill1}</span> ({granularity === 'yearly' ? 'Year-Wise' : 'Month-Wise'})
+                  </h2>
+                  <div className="h-80 w-full">
+                    <ResponsiveContainer>
+                      <BarChart data={m1.series?.[selectedSkill1]?.[granularity] || []}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                        <XAxis dataKey="period" tick={{ fontSize: 11 }} />
+                        <YAxis />
+                        <Tooltip />
+                        <Legend />
+                        <Bar dataKey="count" name="Posting Count F(s)" fill="#4f46e5" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </>
+              ) : (
+                <div className="space-y-6 pt-2">
+                  <div className="grid sm:grid-cols-3 gap-4">
+                    <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
+                      <div className="text-xs text-slate-500 font-semibold">Total Skill Mentions (All Skills)</div>
+                      <div className="text-2xl font-bold text-indigo-600 mt-1">
+                        {overallSkillSummary.totalMentions.toLocaleString()}
+                      </div>
+                    </div>
+
+                    <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
+                      <div className="text-xs text-slate-500 font-semibold">Tracked Technical Skills</div>
+                      <div className="text-2xl font-bold text-slate-800 mt-1">
+                        {overallSkillSummary.trackedSkillsCount}
+                      </div>
+                    </div>
+
+                    <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
+                      <div className="text-xs text-slate-500 font-semibold">Highest Cumulative Demand Skill</div>
+                      <div className="text-xl font-bold text-emerald-600 mt-1">
+                        {overallSkillSummary.topSkillOverall
+                          ? `${overallSkillSummary.topSkillOverall.skill} (${overallSkillSummary.topSkillOverall.total_mentions.toLocaleString()})`
+                          : '—'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-800 mb-3">
+                      Overall Skill Demand Across All Skills ({granularity === 'yearly' ? 'Year-Wise' : 'Month-Wise'})
+                    </h2>
+                    <div className="h-80 w-full">
+                      <ResponsiveContainer>
+                        <BarChart data={overallSkillSummary.periodSeries}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                          <XAxis dataKey="period" tick={{ fontSize: 11 }} />
+                          <YAxis />
+                          <Tooltip />
+                          <Legend />
+                          <Bar dataKey="total_mentions" name="Total Skill Mentions" fill="#4f46e5" radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <h3 className="text-sm font-bold uppercase tracking-wider text-slate-600">
+                        All Skills Demand Matrix
+                      </h3>
+                      <input
+                        type="text"
+                        value={allSkillsFilter}
+                        onChange={(e) => setAllSkillsFilter(e.target.value)}
+                        placeholder="Filter skill name..."
+                        className="px-3 py-1.5 border border-slate-300 rounded-lg text-sm"
+                      />
+                    </div>
+
+                    <div className="overflow-x-auto max-h-96">
+                      <table className="w-full text-sm text-left border-collapse">
+                        <thead className="sticky top-0 bg-slate-100 text-slate-600">
+                          <tr>
+                            <th className="p-3">Skill</th>
+                            <th className="p-3">Total Postings</th>
+                            <th className="p-3">Latest Demand %</th>
+                            <th className="p-3">Peak Period</th>
+                            <th className="p-3">Peak Postings</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {overallSkillSummary.skillRows
+                            .filter(r => r.skill.toLowerCase().includes(allSkillsFilter.toLowerCase()))
+                            .map((r) => (
+                              <tr key={r.skill} className="border-b border-slate-100 hover:bg-slate-50">
+                                <td className="p-3 font-bold text-slate-800">{r.skill}</td>
+                                <td className="p-3 font-semibold text-indigo-600">{r.total_mentions.toLocaleString()}</td>
+                                <td className="p-3">{r.latest_demand_pct}%</td>
+                                <td className="p-3 text-slate-600">{r.peak_period}</td>
+                                <td className="p-3">{r.peak_count.toLocaleString()}</td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
@@ -403,13 +835,53 @@ export default function App() {
                       ))}
                     </select>
                   </div>
+
+                  <div className="flex flex-wrap items-end justify-between gap-4 p-4 bg-slate-50 border border-slate-200 rounded-xl">
+                    <MultiOptionSearch
+                      label="Multi-Option Skill Search (Select Multiple)"
+                      options={skillPool}
+                      selectedOptions={selectedSearchSkills}
+                      onToggleOption={handleToggleSearchSkill}
+                      onClearAll={() => setSelectedSearchSkills([])}
+                      placeholder="Search and select multiple skills..."
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAppendSelectedSkillsToInput}
+                      disabled={selectedSearchSkills.length === 0}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white border border-slate-300 hover:bg-slate-100 disabled:opacity-50 text-slate-800 text-xs font-bold rounded-lg"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Insert Selected Skills
+                    </button>
+                  </div>
+
                   <textarea
                     rows={4}
                     value={jdInput}
-                    onChange={e => setJdInput(e.target.value)}
-                    placeholder="Paste job title, skills, or full job description..."
+                    onChange={e => handleJdChange(e.target.value)}
+                    placeholder="Paste skills, tools, or responsibilities (avoid naming the target job role)..."
                     className="w-full p-3 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500"
                   />
+
+                  {leakageWarning && (
+                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 flex items-center justify-between gap-3">
+                      <span>
+                        <b>Leakage Guard:</b> Target job role names detected in input text will be stripped before prediction so the classifier relies on skills and responsibilities.
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setJdInput(stripRoleLeakage(jdInput));
+                          setLeakageWarning(false);
+                        }}
+                        className="px-2.5 py-1 bg-amber-200/70 hover:bg-amber-200 rounded font-bold text-amber-950 shrink-0"
+                      >
+                        Clean Text
+                      </button>
+                    </div>
+                  )}
+
                   <button
                     onClick={handlePredict}
                     className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-lg shadow"
@@ -529,43 +1001,132 @@ export default function App() {
               )}
             </div>
 
+            {verifyingTrend ? (
+              <div className="p-3 rounded-xl bg-indigo-50 border border-indigo-200 text-xs font-semibold text-indigo-800 flex items-center gap-2">
+                <RefreshCw className="w-4 h-4 animate-spin text-indigo-600" />
+                Verifying local trend results for <b>{activeTrendTarget}</b> against live web search via Gemini...
+              </div>
+            ) : verifiedTrend ? (
+              <div
+                className={`p-3.5 rounded-xl border text-xs space-y-1.5 ${
+                  verifiedTrend.corrected
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                    : verifiedTrend.verified
+                      ? 'bg-sky-50 border-sky-200 text-sky-900'
+                      : 'bg-amber-50 border-amber-200 text-amber-900'
+                }`}
+              >
+                <div className="flex items-center gap-2 font-bold">
+                  <Globe className="w-4 h-4 shrink-0" />
+                  <span>
+                    {verifiedTrend.corrected
+                      ? `Updated Automatically via Web Verification (${verifiedTrend.name})`
+                      : verifiedTrend.verified
+                        ? `Web-Verified Accurate (${verifiedTrend.name})`
+                        : `Local Model Fallback (${verifiedTrend.name})`}
+                  </span>
+                </div>
+                <p>{verifiedTrend.reason}</p>
+                {Array.isArray(verifiedTrend.sources) && verifiedTrend.sources.length > 0 && (
+                  <div className="flex flex-wrap gap-2 pt-0.5">
+                    {verifiedTrend.sources.map((src, idx) => (
+                      <a
+                        key={`${src}-${idx}`}
+                        href={src}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="underline font-semibold hover:opacity-80"
+                      >
+                        Source {idx + 1}
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : null}
+
             {(() => {
-              const item = trendMode === 'skill'
+              const localItem = trendMode === 'skill'
                 ? m4.skills?.[selectedTrendSkill]
                 : m4.roles?.[selectedTrendRole];
-              if (!item) return null;
+              const localSeries = Array.isArray(localItem?.series) ? localItem.series : [];
+              const rawSeries =
+                Array.isArray(verifiedTrend?.series) && verifiedTrend.series.length > 0
+                  ? verifiedTrend.series
+                  : localSeries;
+
+              if (rawSeries.length === 0) return null;
+
               const labelName = trendMode === 'skill' ? selectedTrendSkill : selectedTrendRole;
-              const sum = item.summary || {};
-              const isUp = sum.status === 'Increasing';
-              const isDown = sum.status === 'Decreasing';
+
+              const yoyRows = rawSeries.map((row, idx) => {
+                if (idx === 0) {
+                  return { ...row, yoy_share_pct: null, yoy_count_pct: null };
+                }
+                const prev = rawSeries[idx - 1];
+                const yoyShare = prev.demand_pct > 0
+                  ? Number((((row.demand_pct - prev.demand_pct) / prev.demand_pct) * 100).toFixed(2))
+                  : null;
+                const yoyCount = prev.count > 0
+                  ? Number((((row.count - prev.count) / prev.count) * 100).toFixed(2))
+                  : null;
+                return { ...row, yoy_share_pct: yoyShare, yoy_count_pct: yoyCount };
+              });
+
+              const firstRow = yoyRows[0];
+              const lastRow = yoyRows[yoyRows.length - 1];
+              const netShareChange = firstRow.demand_pct > 0
+                ? Number((((lastRow.demand_pct - firstRow.demand_pct) / firstRow.demand_pct) * 100).toFixed(2))
+                : 0;
+
+              const nYears = Math.max(yoyRows.length - 1, 1);
+              const cagr = firstRow.demand_pct > 0 && lastRow.demand_pct > 0
+                ? Number(((Math.pow(lastRow.demand_pct / firstRow.demand_pct, 1 / nYears) - 1) * 100).toFixed(2))
+                : 0;
+
+              const status = netShareChange >= 10 ? 'Increasing' : (netShareChange <= -10 ? 'Decreasing' : 'Stable');
+              const isUp = status === 'Increasing';
+              const isDown = status === 'Decreasing';
 
               return (
                 <>
                   <div className="grid sm:grid-cols-3 gap-4">
                     <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
-                      <div className="text-xs text-slate-500 font-semibold">Trend Trajectory</div>
+                      <div className="text-xs text-slate-500 font-semibold">
+                        Overall Trajectory ({firstRow.period} → {lastRow.period})
+                      </div>
                       <div
                         className={`text-xl font-bold flex items-center gap-1.5 mt-1 ${
                           isUp ? 'text-emerald-600' : isDown ? 'text-rose-600' : 'text-amber-600'
                         }`}
                       >
                         {isUp ? <ArrowUpRight className="w-5 h-5" /> : isDown ? <ArrowDownRight className="w-5 h-5" /> : <Minus className="w-5 h-5" />}
-                        {sum.status} ({sum.pct_change > 0 ? `+${sum.pct_change}%` : `${sum.pct_change}%`})
+                        {status} ({netShareChange > 0 ? `+${netShareChange}%` : `${netShareChange}%`})
                       </div>
                     </div>
+
                     <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
-                      <div className="text-xs text-slate-500 font-semibold">Early Window Avg Demand Share</div>
-                      <div className="text-xl font-bold text-slate-800 mt-1">{sum.baseline_2020_2022_pct}%</div>
+                      <div className="text-xs text-slate-500 font-semibold">
+                        Start vs. Latest Demand Share
+                      </div>
+                      <div className="text-xl font-bold text-slate-800 mt-1">
+                        {firstRow.demand_pct}% <span className="text-sm font-normal text-slate-400">({firstRow.period})</span>
+                        {' → '}
+                        <span className="text-indigo-600">{lastRow.demand_pct}%</span> <span className="text-sm font-normal text-slate-400">({lastRow.period})</span>
+                      </div>
                     </div>
+
                     <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
-                      <div className="text-xs text-slate-500 font-semibold">2024–2026 Avg Demand Share</div>
-                      <div className="text-xl font-bold text-indigo-600 mt-1">{sum.recent_2024_2026_pct}%</div>
+                      <div className="text-xs text-slate-500 font-semibold">Compound Annual Growth (CAGR)</div>
+                      <div className={`text-xl font-bold mt-1 ${cagr >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                        {cagr > 0 ? `+${cagr}%` : `${cagr}%`} / yr
+                      </div>
                     </div>
                   </div>
 
-                  <div className="h-80 w-full">
+                  <div className="h-72 w-full">
                     <ResponsiveContainer>
-                      <AreaChart data={item.series || []}>
+                      <AreaChart data={yoyRows}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                         <XAxis dataKey="period" />
                         <YAxis unit="%" />
@@ -581,6 +1142,53 @@ export default function App() {
                         />
                       </AreaChart>
                     </ResponsiveContainer>
+                  </div>
+
+                  <div className="space-y-2">
+                    <h3 className="text-sm font-bold uppercase tracking-wider text-slate-600">
+                      Year-by-Year Growth Breakdown ({firstRow.period}–{lastRow.period})
+                    </h3>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm text-left border-collapse">
+                        <thead>
+                          <tr className="bg-slate-100 text-slate-600">
+                            <th className="p-3 rounded-tl-lg">Year</th>
+                            <th className="p-3">Postings F(s)</th>
+                            <th className="p-3">YoY Volume Growth</th>
+                            <th className="p-3">Demand Share D(s)</th>
+                            <th className="p-3 rounded-tr-lg">Annual Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {yoyRows.map((r) => {
+                            const g = r.yoy_share_pct;
+                            const badge = g === null
+                              ? { text: 'Base Year', cls: 'bg-slate-100 text-slate-600' }
+                              : g >= 5
+                                ? { text: 'Increasing', cls: 'bg-emerald-100 text-emerald-800' }
+                                : g <= -5
+                                  ? { text: 'Decreasing', cls: 'bg-rose-100 text-rose-800' }
+                                  : { text: 'Stable', cls: 'bg-amber-100 text-amber-800' };
+
+                            return (
+                              <tr key={r.period} className="border-b border-slate-100 hover:bg-slate-50">
+                                <td className="p-3 font-bold text-slate-800">{r.period}</td>
+                                <td className="p-3">{r.count.toLocaleString()}</td>
+                                <td className={`p-3 font-semibold ${r.yoy_count_pct > 0 ? 'text-emerald-600' : r.yoy_count_pct < 0 ? 'text-rose-600' : 'text-slate-400'}`}>
+                                  {r.yoy_count_pct === null ? '—' : `${r.yoy_count_pct > 0 ? '+' : ''}${r.yoy_count_pct}%`}
+                                </td>
+                                <td className="p-3 font-bold text-indigo-600">{r.demand_pct}%</td>
+                                <td className="p-3">
+                                  <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${badge.cls}`}>
+                                    {badge.text}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </>
               );
@@ -663,7 +1271,10 @@ export default function App() {
                 label="Select IT Job Role"
                 options={addon.roles}
                 value={selectedCompanyRole}
-                onChange={setSelectedCompanyRole}
+                onChange={(r) => {
+                  setSelectedCompanyRole(r);
+                  setSelectedCompany(null);
+                }}
               />
               <input
                 type="text"
@@ -675,31 +1286,127 @@ export default function App() {
             </div>
 
             <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
-              <b>Methodological Note:</b> Companies listed below previously advertised vacancies for <b>{selectedCompanyRole}</b> in the historical dataset. Presence here reflects historical recruitment activity, not live open vacancies.
+              <b>Methodological Note:</b> Companies listed below previously advertised vacancies for <b>{selectedCompanyRole}</b> in the historical dataset. Click any company name to open its year-wise analytics pop-up.
             </div>
 
-            <table className="w-full text-sm text-left border-collapse">
-              <thead>
-                <tr className="bg-slate-100 text-slate-600">
-                  <th className="p-3">Company</th>
-                  <th className="p-3">Historical Postings</th>
-                  <th className="p-3">Observed Hiring Period</th>
-                  <th className="p-3">Primary Location</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(addon.companies_by_role?.[selectedCompanyRole] || [])
-                  .filter(c => c.company.toLowerCase().includes(companySearch.toLowerCase()))
-                  .map(c => (
-                    <tr key={c.company} className="border-b border-slate-100 hover:bg-slate-50">
-                      <td className="p-3 font-bold text-slate-800">{c.company}</td>
-                      <td className="p-3 text-indigo-600 font-semibold">{c.posting_count}</td>
-                      <td className="p-3 text-slate-600">{c.hiring_period}</td>
-                      <td className="p-3 text-slate-500">{c.primary_location}</td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-100 text-slate-600">
+                    <th className="p-3">Company</th>
+                    <th className="p-3">Historical Postings</th>
+                    <th className="p-3">Observed Hiring Period</th>
+                    <th className="p-3">Primary Location</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(addon.companies_by_role?.[selectedCompanyRole] || [])
+                    .filter(c => c.company.toLowerCase().includes(companySearch.toLowerCase()))
+                    .map(c => {
+                      const isSelected = selectedCompany?.company === c.company;
+                      return (
+                        <tr
+                          key={c.company}
+                          onClick={() => setSelectedCompany(c)}
+                          className={`border-b border-slate-100 cursor-pointer transition ${
+                            isSelected ? 'bg-indigo-50' : 'hover:bg-slate-50'
+                          }`}
+                        >
+                          <td className="p-3 font-bold text-indigo-700 underline">{c.company}</td>
+                          <td className="p-3 text-indigo-600 font-semibold">{c.posting_count}</td>
+                          <td className="p-3 text-slate-600">{c.hiring_period}</td>
+                          <td className="p-3 text-slate-500">{c.primary_location}</td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* POP-UP MODAL FOR SELECTED COMPANY YEAR-WISE ANALYTICS */}
+        {selectedCompany && (
+          <div
+            onClick={() => setSelectedCompany(null)}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4"
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-2xl border border-indigo-200 shadow-2xl p-6 space-y-5"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 pb-4">
+                <div>
+                  <h3 className="text-xl font-bold text-slate-900">
+                    Year-Wise Analytics: <span className="text-indigo-600">{selectedCompany.company}</span>
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Role: <b>{selectedCompanyRole}</b> · Total Postings: <b>{selectedCompany.posting_count}</b> · Period: <b>{selectedCompany.hiring_period}</b> · Location: <b>{selectedCompany.primary_location}</b>
+                  </p>
+                </div>
+                <button
+                  onClick={() => setSelectedCompany(null)}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200"
+                >
+                  <X className="w-4 h-4" />
+                  Close
+                </button>
+              </div>
+
+              {selectedCompanyYearly.length > 0 ? (
+                <>
+                  <div className="h-64 w-full">
+                    <ResponsiveContainer>
+                      <BarChart data={selectedCompanyYearly}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                        <XAxis dataKey="year" />
+                        <YAxis allowDecimals={false} />
+                        <Tooltip />
+                        <Legend />
+                        <Bar dataKey="postings" name="Yearly Postings" fill="#4f46e5" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm text-left border-collapse">
+                      <thead>
+                        <tr className="bg-slate-100 text-slate-600">
+                          <th className="p-3 rounded-tl-lg">Year</th>
+                          <th className="p-3">Postings</th>
+                          <th className="p-3 rounded-tr-lg">YoY Growth</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedCompanyYearly.map((yr) => (
+                          <tr key={yr.year} className="border-b border-slate-100 hover:bg-slate-50">
+                            <td className="p-3 font-bold text-slate-800">{yr.year}</td>
+                            <td className="p-3 font-semibold text-indigo-600">{yr.postings}</td>
+                            <td
+                              className={`p-3 font-semibold ${
+                                yr.yoy_pct == null
+                                  ? 'text-slate-400'
+                                  : yr.yoy_pct > 0
+                                    ? 'text-emerald-600'
+                                    : yr.yoy_pct < 0
+                                      ? 'text-rose-600'
+                                      : 'text-slate-500'
+                              }`}
+                            >
+                              {yr.yoy_pct == null ? '—' : `${yr.yoy_pct > 0 ? '+' : ''}${yr.yoy_pct}%`}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm text-slate-500">
+                  No year-wise series available for this company entry.
+                </p>
+              )}
+            </div>
           </div>
         )}
       </main>
